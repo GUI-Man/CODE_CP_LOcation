@@ -58,8 +58,13 @@ return;
         System.out.println(t.VerifySign_1());
         System.out.println(s.VerifySign_2());
         System.out.println("c");
-        x.UE_ExchangeFirst();
+        x.calculateForUEFirstStep();
+        SN sn=new SN();
+//        sn.VerifyCert1_Cert2();
+        sn.CalculateKSN();
 
+        x.UEsecondStep();
+//        sn.CalculateKSN();
 //        byte[] bytes = SM2.generateByteStream(256);
 //        String AID_1 = Base64.getEncoder().encodeToString(bytes);
 //        byte[] decode = Base64.getDecoder().decode(AID_1);

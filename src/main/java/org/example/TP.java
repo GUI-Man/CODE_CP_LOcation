@@ -142,7 +142,7 @@ public class TP {
             //检查签名,并且生成证书
             if(SM2sign.verify(this.PUE,null,SignData1,SIGN)){
 //             这里设定t1为3分钟，即3*60*1000
-            long t1=3*60*1000;
+                long t1=3*60*1000;
                 byte[] t1byte = SM2.longToBytes(t1);
                 byte[] CertData=SM2.byteMerger(AID_1,ApubByte,t1byte);
                 //生成证书里面的签名
@@ -155,6 +155,8 @@ public class TP {
                 ps = con.prepareStatement("UPDATE UE set T1="+t1+" where id=1;");
                 ps.execute();
                 ps = con.prepareStatement("UPDATE TP set T1="+t1+" where id=1;");
+                ps.execute();
+                ps = con.prepareStatement("UPDATE SN set T1="+t1+" where id=1;");
                 ps.execute();
                 ps = con.prepareStatement("UPDATE UE set A=\""+(String)TPParam.get("A")+"\" where id=1;");
                 ps.execute();

@@ -159,6 +159,8 @@ public class HN {
                 ps.execute();
                 ps = con.prepareStatement("UPDATE HN set T2="+t2+" where id=1;");
                 ps.execute();
+                ps = con.prepareStatement("UPDATE SN set T2="+t2+" where id=1;");
+                ps.execute();
                 ps = con.prepareStatement("UPDATE UE set B=\""+(String)TPParam.get("B")+"\" where id=1;");
                 ps.execute();
 
