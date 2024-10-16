@@ -111,24 +111,36 @@ return;
     }
     public static void main(String[] args) throws Exception{
 //        PS：每次用之前先启动一下服务器，然后初始化一下再运行，密码是123456
+        //在数据库里面生成所有人的公私钥对
         InitDatabase();
+
         UE x=new UE();
+        //生成自己的RID
         x.gen_key_2();
+        //获取证书
         x.ask();
         TP t=new TP();
         HN s=new HN();
+        //验证证书请求并且发送证书
         System.out.println(t.VerifySign_1());
         System.out.println(s.VerifySign_2());
-        System.out.println("c");
+        //密钥交换，KUE和KSN是密钥交换生成的公共密钥
+        //calculateForUEFirstStep这个是交换密钥的UE第一步内容
         x.calculateForUEFirstStep();
         SN sn=new SN();
+        //这一步是验证CERT1和CERT2
         sn.VerifyCert1_Cert2();
+        //分别计算密钥交换结果
         BigInteger KSN=sn.CalculateKSN();
         BigInteger KUE=x.UEsecondStep();
         System.out.println("KUE:"+KUE.toString());
         System.out.println("KSN:"+KSN.toString());
+        //追溯
+        //SN请求追随
         SN.AskforRid();
+        //HN的内容
         HN.FindRid();
+//        TP的内容
         TP.RestoreRID();
         //身份追溯
 //        Connection con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test", "root", "123456");
