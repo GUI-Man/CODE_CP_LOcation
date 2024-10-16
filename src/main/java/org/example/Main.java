@@ -9,6 +9,10 @@ import org.bouncycastle.math.ec.ECPoint;
 
 import java.math.BigInteger;
 import java.security.Security;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.Base64;
 import java.util.Timer;
 
@@ -49,7 +53,65 @@ public class Main {
         System.out.println(SM2.bytesToLong(bytes));
 return;
     }
+    public static void InitDatabase() throws Exception{
+        Class.forName("com.mysql.jdbc.Driver");
+
+        Connection con= DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
+        byte[] bytes = SM2.generateByteStream(15);
+        String encode = Base64.getEncoder().encodeToString(bytes);
+        //生成全部的公私钥对
+        SM2 sm2 = new SM2();
+        AsymmetricCipherKeyPair HNKey = sm2.generateKey();
+        AsymmetricCipherKeyPair SNKey = sm2.generateKey();
+        AsymmetricCipherKeyPair TPKey=sm2.generateKey();
+        AsymmetricCipherKeyPair UEKey=sm2.generateKey();
+        ECPublicKeyParameters HNPub = (ECPublicKeyParameters)HNKey.getPublic();
+        ECPrivateKeyParameters HNPriv=(ECPrivateKeyParameters) HNKey.getPrivate();
+        ECPublicKeyParameters SNPub = (ECPublicKeyParameters)SNKey.getPublic();
+        ECPrivateKeyParameters SNPriv=(ECPrivateKeyParameters) SNKey.getPrivate();
+        ECPublicKeyParameters UEPub = (ECPublicKeyParameters)UEKey.getPublic();
+        ECPrivateKeyParameters UEPriv=(ECPrivateKeyParameters) UEKey.getPrivate();
+        ECPublicKeyParameters TPPub = (ECPublicKeyParameters)TPKey.getPublic();
+        ECPrivateKeyParameters TPPriv=(ECPrivateKeyParameters) TPKey.getPrivate();
+        byte[] hnPub = HNPub.getQ().getEncoded(false);
+        String hnPubStore=Base64.getEncoder().encodeToString(hnPub);
+        String hnPrivStore=HNPriv.getD().toString();
+        String snPubStore=Base64.getEncoder().encodeToString(SNPub.getQ().getEncoded(false));
+        String snPrivStore=SNPriv.getD().toString();
+        String uePubStore=Base64.getEncoder().encodeToString(UEPub.getQ().getEncoded(false));
+        String uePrivStore=UEPriv.getD().toString();
+        String tpPubStore=Base64.getEncoder().encodeToString(TPPub.getQ().getEncoded(false));
+        String tpPrivStore=TPPriv.getD().toString();
+            //清空过去用过的表格，每个机器里面应该都只有一个数据
+        PreparedStatement ps = con.prepareStatement("DELETE FROM UE WHERE 1=1;");
+        ps.execute();
+        ps=con.prepareStatement("DELETE FROM SN WHERE 1=1;");
+        ps.execute();
+        ps=con.prepareStatement("DELETE FROM TP WHERE 1=1;");
+        ps.execute();
+        ps=con.prepareStatement("DELETE FROM HN WHERE 1=1;");
+        ps.execute();
+        ps=con.prepareStatement("insert into UE(id,TPPub,HNPub, UEPRIV, UEPUB, SNPUB) VALUES (1,'"+tpPubStore
+                +"','"+hnPubStore+"','"+uePrivStore+"','"+uePubStore+"','"+snPubStore+"')");
+        ps.execute();
+        ps=con.prepareStatement("insert into HN(id,TPPub,HNPub, HNPRIV, UEPUB, SNPUB) VALUES (1,'"+tpPubStore
+                    +"','"+hnPubStore+"','"+hnPrivStore+"','"+uePubStore+"','"+snPubStore+"')");
+        ps.execute();
+        ps=con.prepareStatement("insert into SN(id,TPPub,HNPub, SNPRIV, UEPUB, SNPUB) VALUES (1,'"+tpPubStore
+                    +"','"+hnPubStore+"','"+snPrivStore+"','"+uePubStore+"','"+snPubStore+"')");
+        ps.execute();
+        ps=con.prepareStatement("insert into TP(id,TPPub,HNPub, TPPRIV, UEPUB, SNPUB) VALUES (1,'"+tpPubStore
+                    +"','"+hnPubStore+"','"+tpPrivStore+"','"+uePubStore+"','"+snPubStore+"')");
+        ps.execute();
+        ps=con.prepareStatement("update SN set SNName=\"5GAKACHINAUECNU\" WHERE ID=1");
+        ps.execute();
+        con.close();
+            return;
+
+    }
     public static void main(String[] args) throws Exception{
+//        PS：每次用之前先启动一下服务器，然后初始化一下再运行，密码是123456
+        InitDatabase();
         UE x=new UE();
         x.gen_key_2();
         x.ask();
@@ -60,10 +122,27 @@ return;
         System.out.println("c");
         x.calculateForUEFirstStep();
         SN sn=new SN();
-//        sn.VerifyCert1_Cert2();
-        sn.CalculateKSN();
-
-        x.UEsecondStep();
+        sn.VerifyCert1_Cert2();
+        BigInteger KSN=sn.CalculateKSN();
+        BigInteger KUE=x.UEsecondStep();
+        System.out.println("KUE:"+KUE.toString());
+        System.out.println("KSN:"+KSN.toString());
+        SN.AskforRid();
+        HN.FindRid();
+        TP.RestoreRID();
+        //身份追溯
+//        Connection con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test", "root", "123456");
+//        PreparedStatement ps=con.prepareStatement("select * from SN where CName=\"Hab\"");
+//        ResultSet resultSet = ps.executeQuery();
+//        System.out.println(resultSet.getRow());
+//        while(resultSet.next()){
+//            System.out.println(resultSet.getRow());
+//        }
+//        ps=con.prepareStatement("select COMMON from SN where CName=\"cert2SIGN\"");
+//        ResultSet resultSet1 = ps.executeQuery();
+//        while(resultSet1.next()){
+//            System.out.println(resultSet1.getRow());
+//        }
 //        sn.CalculateKSN();
 //        byte[] bytes = SM2.generateByteStream(256);
 //        String AID_1 = Base64.getEncoder().encodeToString(bytes);

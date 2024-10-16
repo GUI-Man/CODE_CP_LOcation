@@ -79,13 +79,13 @@ public class SN {
     SN() throws SQLException,ClassNotFoundException{
         this.sm2=new SM2();
         byte[] UEPUBbyte;
-        byte[] SNPrivByte;
+        String SNPrivByte;
         byte[] SNPUBbyte;
         byte[] TPPUBbyte;
         byte[] HNPUBByte;
         Map<String, Object> sqlmap = autoSqlValue();
         SNPUBbyte= Base64.getDecoder().decode((String)sqlmap.get("SNPub"));
-        SNPrivByte=Base64.getDecoder().decode((String)sqlmap.get("SNPriv"));
+        SNPrivByte=(String)sqlmap.get("SNPriv");
         this.setSN(new AsymmetricCipherKeyPair(sm2.RestorePub(SNPUBbyte),sm2.RestorePriv(new BigInteger(SNPrivByte))));
         TPPUBbyte= Base64.getDecoder().decode((String)sqlmap.get("TPPub"));
         this.setPTP(sm2.RestorePub(TPPUBbyte));
@@ -94,7 +94,7 @@ public class SN {
         HNPUBByte=Base64.getDecoder().decode((String)sqlmap.get("HNPub"));
         this.setPHN(sm2.RestorePub(HNPUBByte));
     }
-    public Map<String,Object> autoSqlValue() throws ClassNotFoundException, SQLException {
+    public static Map<String,Object> autoSqlValue() throws ClassNotFoundException, SQLException {
         Class.forName("com.mysql.jdbc.Driver");
         Connection con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test", "root", "123456");
         PreparedStatement ps = con.prepareStatement("select * from SN where id=1 ");
@@ -222,6 +222,21 @@ public class SN {
         System.out.println(("基于私钥 D 生成的 ECPoint: " + derivedPoint));
 
         return combinedHash; // 返回生成的私钥 D
+    }
+    public static String AskForSqlCommon(String name)  {
+        Connection con= null;
+        try {
+            con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
+            PreparedStatement ps=con.prepareStatement("Select Common from SN where CName=\""+name+"\";");
+            ResultSet rs = ps.executeQuery();
+           String result = "";
+            while(rs.next()) {
+                result=rs.getString("Common");
+            }
+            return result;
+        } catch (SQLException e) {
+            return "false";
+        }
     }
     public Boolean VerifyCert1_Cert2() throws SQLException, ClassNotFoundException {
         //检验U1，U2签名
@@ -380,5 +395,49 @@ public class SN {
 
     public void setPTP(ECPublicKeyParameters PTP) {
         this.PTP = PTP;
+    }
+    //Send CommonValue给某人
+    public static void SendInfoToWhom(String receiver,String[] name,String[] value)throws SQLException{
+        Connection con= null;
+        con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
+
+        for(int i=0;i<name.length;i++) {
+            PreparedStatement ps=con.prepareStatement("select COMMON from "+receiver+" where CNAME=\""+name[i]
+                    +"\";");
+            System.out.println("select COMMON from "+receiver+"where CNAME=\""+name[i]
+                    +"\";");
+            ResultSet rs = ps.executeQuery();
+            while(rs.next()){
+                if(rs.getRow()!=0){
+                    System.out.println("可能存在重复操作，原来的值为"+rs.getString("Common"));
+                }
+            }
+            ps.execute();
+            ps = con.prepareStatement("INSERT INTO "+receiver
+                    +"(CNAME,COMMON) "
+                    + "values (\""+name[i]+"\",\""
+                    + value[i]
+                    + "\");");
+            ps.execute();
+        }
+        return ;
+
+    }
+    //把Cert1和Cert2发给HN
+    public static void AskforRid() throws SQLException,ClassNotFoundException{
+        Map<String, Object> sqlValue = org.example.SN.autoSqlValue();
+        String AID1 = (String)sqlValue.get("AID_1");
+        String AID2 = (String)sqlValue.get("AID_2");
+        String A=(String)sqlValue.get("A");
+        String B=(String)sqlValue.get("B");
+        String t1=(String)sqlValue.get("t1");
+        String t2=(String)sqlValue.get("t2");
+        String CertSign1= org.example.SN.AskForSqlCommon("cert1SIGN");
+        String CertSign2= org.example.SN.AskForSqlCommon("cert2SIGN");
+        String[] name={"AID1","AID2","A","B","t1","t2","CertSign1","CertSign2"};
+        String[] value={AID1,AID2,A,B,t1,t2,CertSign1,CertSign2};
+
+        org.example.SN.SendInfoToWhom("HN",name,value);
+
     }
 }

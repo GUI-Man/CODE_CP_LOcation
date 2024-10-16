@@ -3,6 +3,7 @@ package org.example;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.CipherParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
+import org.bouncycastle.math.ec.ECPoint;
 
 import java.math.BigInteger;
 import java.sql.*;
@@ -20,13 +21,13 @@ public class TP {
     TP() throws SQLException,ClassNotFoundException{
         this.sm2=new SM2();
         byte[] UEPUBbyte;
-        byte[] TPPrivByte;
+        String TPPrivByte;
         byte[] SNPUBbyte;
         byte[] TPPUBbyte;
         byte[] HNPUBByte;
         Map<String, Object> sqlmap = autoSqlValue();
         TPPUBbyte= Base64.getDecoder().decode((String)sqlmap.get("TPPub"));
-        TPPrivByte=Base64.getDecoder().decode((String)sqlmap.get("TPPriv"));
+        TPPrivByte=(String)sqlmap.get("TPPriv");
         this.setTP(new AsymmetricCipherKeyPair(sm2.RestorePub(TPPUBbyte),sm2.RestorePriv(new BigInteger(TPPrivByte))));
         SNPUBbyte= Base64.getDecoder().decode((String)sqlmap.get("SNPub"));
         this.setPSN(sm2.RestorePub(SNPUBbyte));
@@ -35,7 +36,7 @@ public class TP {
         HNPUBByte=Base64.getDecoder().decode((String)sqlmap.get("HNPub"));
         this.setPHN(sm2.RestorePub(HNPUBByte));
     }
-    public Map<String,Object> autoSqlValue() throws ClassNotFoundException, SQLException {
+    public static Map<String,Object> autoSqlValue() throws ClassNotFoundException, SQLException {
         Class.forName("com.mysql.jdbc.Driver");
         Connection con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test", "root", "123456");
         PreparedStatement ps = con.prepareStatement("select * from TP where id=1 ");
@@ -54,6 +55,7 @@ public class TP {
         con.close();
         return columnValues;
     }
+
     public AsymmetricCipherKeyPair getTP() {
         return TP;
     }
@@ -170,5 +172,37 @@ public class TP {
 
 
     }
+    public static String AskForSqlCommon(String name)  {
+        Connection con= null;
+        try {
+            con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
+            PreparedStatement ps=con.prepareStatement("Select Common from TP where CName=\""+name+"\";");
+            ResultSet rs = ps.executeQuery();
+            String result = "";
+            while(rs.next()) {
+                result=rs.getString("Common");
+            }
+            return result;
+        } catch (SQLException e) {
+            return "false";
+        }
+    }
+    public static void RestoreRID() throws SQLException, ClassNotFoundException {
+        SM2 sm2 = new SM2();
+        String c = org.example.TP.AskForSqlCommon("C");
 
+        Map<String, Object> sqlValue = org.example.TP.autoSqlValue();
+        String aid1 = (String)sqlValue.get("AID_1");
+        byte[] AID_1 = Base64.getDecoder().decode(aid1);
+        BigInteger tpPriv =new BigInteger((String) sqlValue.get("TPPriv"));
+        String A=(String) sqlValue.get("A");
+        ECPublicKeyParameters Apub = sm2.RestorePub(Base64.getDecoder().decode(A));
+        ECPoint result = Apub.getQ().multiply(tpPriv).normalize();
+        byte[] HKTP = SM3.extendHash(result.getEncoded(false), 65);
+        System.out.println("HKTP在追溯阶段是："+Base64.getEncoder().encodeToString(HKTP));
+        byte[] RID=SM2.xorByteArrays(AID_1,HKTP);
+        RID=SM2.xorByteArrays(RID,Base64.getDecoder().decode(c));
+        System.out.println("恢复出的真实身份是:"+Base64.getEncoder().encodeToString(RID));
+
+    }
 }

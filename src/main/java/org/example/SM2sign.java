@@ -40,7 +40,6 @@ public class SM2sign {
 //不加入ID如下
 //        CipherParameters aPublic = this.Asigner.getPublic();
         signer.init(false,aPublic);
-
         signer.update(SignData,0,SignData.length);
         boolean result=signer.verifySignature(SignatureByte);
 
