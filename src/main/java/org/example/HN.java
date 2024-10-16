@@ -127,10 +127,15 @@ public class HN {
         SignData = signData;
     }
 
-    public boolean VerifySign_2() throws Exception {
-        Map<String, Object> TPParam = this.autoSqlValue();
+    public static boolean VerifySign_2() throws Exception {
+        SM2 sm2 = new SM2();
+        Map<String, Object> TPParam = org.example.HN.autoSqlValue();
         byte[] SIGN= Base64.getDecoder().decode((String) TPParam.get("SIGNDATA"));
         byte[] AID_2= Base64.getDecoder().decode((String) TPParam.get("AID_2"));
+        //获得PUE
+        ECPublicKeyParameters PUE = sm2.RestorePub(Base64.getDecoder().decode((String) TPParam.get("UEPub")));
+        ECPrivateKeyParameters HNPrivate=sm2.RestorePriv(new BigInteger ((String)TPParam.get("HNPriv")));
+
         ECPublicKeyParameters B = sm2.RestorePub(Base64.getDecoder().decode((String) TPParam.get("B")));
         String Tp=(String) TPParam.get("TimeSTAMPUE");
         long timestamp=Long.valueOf(Tp);
@@ -145,13 +150,13 @@ public class HN {
         }
         else{
             //检查签名,并且生成证书
-            if(SM2sign.verify(this.PUE,null,SignData2,SIGN)){
+            if(SM2sign.verify(PUE,null,SignData2,SIGN)){
 //             这里设定t2为3分钟，即3*60*1000
                 long t2=3*60*1000;
                 byte[] t2byte = SM2.longToBytes(t2);
                 byte[] CertData=SM2.byteMerger(AID_2,BpubByte,t2byte);
                 //生成证书里面的签名
-                byte[] sign = SM2sign.sign(this.HN.getPrivate(), null, CertData);
+                byte[] sign = SM2sign.sign(HNPrivate, null, CertData);
                 Connection con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test", "root", "123456");
                 PreparedStatement ps = con.prepareStatement("UPDATE UE set CERT2SIGN=\""+Base64.getEncoder().encodeToString(sign)+"\" where id=1;");
                 ps.execute();
@@ -169,7 +174,7 @@ public class HN {
                 return true;
 
             }else {
-                return SM2sign.verify(this.PUE, null, SignData2, SIGN);
+                return SM2sign.verify(PUE, null, SignData2, SIGN);
             }
         }
     }

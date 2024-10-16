@@ -195,57 +195,15 @@ ECPublicKeyParameters RB;
     public void setRID(byte[] RID) {
         this.RID = RID;
     }
-    public void gen_key_2() throws ClassNotFoundException, SQLException {
-        this.sm2 = new SM2();
+    public static void gen_key_2() throws ClassNotFoundException, SQLException {
+        SM2 sm2 = new SM2();
         Class.forName("com.mysql.jdbc.Driver");
-//        byte[] UEPUBbyte;
-//        byte[] UEPrivByte;
-//        byte[] SNPUBbyte;
-//        byte[] TPPUBbyte;
-//        byte[] HNPUBByte;
-//        Connection con= DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
-//        PreparedStatement ps=con.prepareStatement("select UEPUB from UE where id=1 ");
-//        ResultSet resultSet = ps.executeQuery();
-//        ECPublicKeyParameters UEPub=null;
-//        ECPrivateKeyParameters UEPriv=null;
-//        while(resultSet.next()){
-//            String uepub = resultSet.getString("UEPUB");
-//            UEPub = sm2.RestorePub(Base64.getDecoder().decode(uepub));
-//        }
-//        ps=con.prepareStatement("select UEPRIV from UE where id=1 ");
-//        resultSet = ps.executeQuery();
-//        while(resultSet.next()){
-//            String uepriv = resultSet.getString("UEPRIV");
-//
-//            UEPriv = sm2.RestorePriv(new BigInteger(Base64.getDecoder().decode(uepriv)));
-//        }
-//        this.setUE(new AsymmetricCipherKeyPair(UEPub,UEPriv));
-//        ps=con.prepareStatement("select SNPUB from UE where id=1 ");
-//        resultSet = ps.executeQuery();
-//        while(resultSet.next()){
-//            String uepriv = resultSet.getString("SNPUB");
-//            ECPublicKeyParameters SNPUB = sm2.RestorePub(Base64.getDecoder().decode(uepriv));
-//            this.setPSN(SNPUB);
-//        }
-//        ps=con.prepareStatement("select HNPUB from UE where id=1 ");
-//        resultSet = ps.executeQuery();
-//        while(resultSet.next()){
-//            String uepriv = resultSet.getString("HNPUB");
-//            ECPublicKeyParameters HNPUB = sm2.RestorePub(Base64.getDecoder().decode(uepriv));
-//            this.setPHN(HNPUB);
-//        }
-//        ps=con.prepareStatement("select TPPUB from UE where id=1 ");
-//        resultSet = ps.executeQuery();
-//        while(resultSet.next()){
-//            String uepriv = resultSet.getString("TPPUB");
-//            ECPublicKeyParameters TPPUB = sm2.RestorePub(Base64.getDecoder().decode(uepriv));
-//            this.setPTP(TPPUB);
-//        }
         //生成一个65字节长度的RID
-        this.RID=sm2.generateByteStream(65);
+        byte[] RID=sm2.generateByteStream(65);
         Connection con= DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
 
-        PreparedStatement ps = con.prepareStatement("UPDATE UE set RID=\"" + this.RID + "\" where id=1;");
+        PreparedStatement ps = con.prepareStatement("UPDATE UE set RID=\"" +Base64.getEncoder().encodeToString( RID) + "\" where id=1;");
+        ps.execute();
         con.close();
     }
     public void gen_key(){
@@ -260,13 +218,21 @@ ECPublicKeyParameters RB;
         this.PTP=(ECPublicKeyParameters) TP.getPublic();
         this.PSN=(ECPublicKeyParameters) SN.getPublic();
     }
+
     //UE请求凭证
-    public void ask() throws Exception{
+    public static void ask() throws Exception{
+
         //1步骤,算出C
+        SM2 sm2 = new SM2();
         Connection con= DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
-        this.RID=sm2.generateByteStream(65);
-        System.out.println("原来的真实身份是:"+Base64.getEncoder().encodeToString(this.RID));
-        AsymmetricCipherKeyPair temp = this.sm2.generateKey();
+        Map<String, Object> sqlValue = autoSqlValue();
+        //事先从数据库获取所有的PTP PHN PSN PUE
+        ECPublicKeyParameters PTP=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("TPPub")));
+        ECPublicKeyParameters PHN=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("HNPub")));
+        ECPrivateKeyParameters UEPriv=sm2.RestorePriv(new BigInteger((String) sqlValue.get("UEPRIV")));
+        byte[] RID=Base64.getDecoder().decode((String)sqlValue.get("RID"));
+        System.out.println("原来的真实身份是:"+Base64.getEncoder().encodeToString(RID));
+        AsymmetricCipherKeyPair temp = sm2.generateKey();
         //C的点的公共值
         ECPublicKeyParameters CPublic = (ECPublicKeyParameters)temp.getPublic();
 
@@ -275,11 +241,12 @@ ECPublicKeyParameters RB;
         //2步骤，计算中间值M
         byte[] M=SM2.xorByteArrays(Cor,RID);
         //3.选取两个随机数a,b计算A,B
-        A=this.sm2.generateKey();
-        B=this.sm2.generateKey();
+
+        AsymmetricCipherKeyPair A=sm2.generateKey();
+        AsymmetricCipherKeyPair B=sm2.generateKey();
 
         //4.计算两个假名
-        ECCurve.Fp curve = this.sm2.getcurve();
+        ECCurve.Fp curve = sm2.getcurve();
         ECPrivateKeyParameters aPrivate = (ECPrivateKeyParameters) A.getPrivate();
         ECPrivateKeyParameters bPrivate = (ECPrivateKeyParameters) B.getPrivate();
         ECPublicKeyParameters aPublic = (ECPublicKeyParameters)A.getPublic();
@@ -287,29 +254,29 @@ ECPublicKeyParameters RB;
         BigInteger aPrivBG = aPrivate.getD();
         BigInteger bPrivBG= bPrivate.getD();
 //a*Ktp和b*Phn
-        ECPoint amultiplyTPtemp = this.PTP.getQ().multiply(aPrivBG).normalize();
-        ECPoint bmultiplyHNtemp = this.PHN.getQ().multiply(bPrivBG).normalize();
+        ECPoint amultiplyTPtemp = PTP.getQ().multiply(aPrivBG).normalize();
+        ECPoint bmultiplyHNtemp = PHN.getQ().multiply(bPrivBG).normalize();
         byte[] Hktp = SM3.extendHash(amultiplyTPtemp.getEncoded(false), 65);
         System.out.println("HKTP在生成阶段是："+Base64.getEncoder().encodeToString(Hktp));
         byte[] Hkhn = SM3.extendHash(bmultiplyHNtemp.getEncoded(false),65);
         System.out.println("HKHN在生成阶段是："+Base64.getEncoder().encodeToString(Hkhn));
         byte[] AID_1=SM2.xorByteArrays(M,Hktp);
-        this.setAID_1(AID_1);
+//        this.setAID_1(AID_1);
 
         byte[] AID_2=SM2.xorByteArrays(Cor,Hkhn);
-        this.setAID_2(AID_2);
+//        this.setAID_2(AID_2);
         //第五步：UE向TP和HN分别请求身份凭证
         //生成时间戳签名
 
-        PreparedStatement ps=con.prepareStatement("UPDATE UE set AID_1=\""+Base64.getEncoder().encodeToString(this.AID_1)+"\" where id=1;");
+        PreparedStatement ps=con.prepareStatement("UPDATE UE set AID_1=\""+Base64.getEncoder().encodeToString(AID_1)+"\" where id=1;");
         ps.execute();
-        ps=con.prepareStatement("UPDATE SN set AID_1=\""+Base64.getEncoder().encodeToString(this.AID_1)+"\" where id=1;");
+        ps=con.prepareStatement("UPDATE SN set AID_1=\""+Base64.getEncoder().encodeToString(AID_1)+"\" where id=1;");
         ps.execute();
-        ps=con.prepareStatement("UPDATE UE set AID_2=\""+Base64.getEncoder().encodeToString(this.AID_2)+"\" where id=1;");
+        ps=con.prepareStatement("UPDATE UE set AID_2=\""+Base64.getEncoder().encodeToString(AID_2)+"\" where id=1;");
         ps.execute();
-        ps=con.prepareStatement("UPDATE SN set AID_2=\""+Base64.getEncoder().encodeToString(this.AID_2)+"\" where id=1;");
+        ps=con.prepareStatement("UPDATE SN set AID_2=\""+Base64.getEncoder().encodeToString(AID_2)+"\" where id=1;");
         ps.execute();
-        ps=con.prepareStatement("UPDATE UE set RID=\""+Base64.getEncoder().encodeToString(this.RID)+"\" where id=1;");
+        ps=con.prepareStatement("UPDATE UE set RID=\""+Base64.getEncoder().encodeToString(RID)+"\" where id=1;");
         ps.execute();
         ps=con.prepareStatement("UPDATE UE set APRIV=\""+((ECPrivateKeyParameters) A.getPrivate()).getD().toString()+"\" where id=1;");
         ps.execute();
@@ -317,21 +284,21 @@ ECPublicKeyParameters RB;
         ps.execute();
         // 获取当前时间的时间戳（毫秒）
         long timestamp = System.currentTimeMillis();
-        this.setTimeStamp(timestamp);
-        ps=con.prepareStatement("UPDATE UE set TimeSTAMP="+this.timeStamp+" where id=1;");
+//        this.setTimeStamp(timestamp);
+        ps=con.prepareStatement("UPDATE UE set TimeSTAMP="+timestamp+" where id=1;");
         ps.execute();
         byte[] timestampByte=SM2.longToBytes(timestamp);
         byte[] SignData1=SM2.byteMerger(AID_1,timestampByte,aPublic.getQ().getEncoded(false));
         byte[] SignData2=SM2.byteMerger(AID_2,timestampByte,bPublic.getQ().getEncoded(false));
         SM2sign sm2sign = new SM2sign();
-        byte[] sign1 = sm2sign.sign(this.UE.getPrivate(), null, SignData1);
-        byte[] sign2 = sm2sign.sign(this.UE.getPrivate(), null, SignData2);
+        byte[] sign1 = sm2sign.sign(UEPriv, null, SignData1);
+        byte[] sign2 = sm2sign.sign(UEPriv, null, SignData2);
 
         //向UE发送的内容
         Map<String, Object> ToTP = new HashMap<String, Object>(4);
-        ps=con.prepareStatement("UPDATE TP set TimeSTAMPUE="+this.timeStamp+" where id=1;");
+        ps=con.prepareStatement("UPDATE TP set TimeSTAMPUE="+timestamp+" where id=1;");
         ps.execute();
-        ps=con.prepareStatement("UPDATE TP set AID_1=\""+Base64.getEncoder().encodeToString(this.AID_1)+"\" where id=1;");
+        ps=con.prepareStatement("UPDATE TP set AID_1=\""+Base64.getEncoder().encodeToString(AID_1)+"\" where id=1;");
         ps.execute();
         String AString = Base64.getEncoder().encodeToString(aPublic.getQ().getEncoded(false));
         ps=con.prepareStatement("UPDATE TP set A=\""+AString+"\" where id=1;");
@@ -349,9 +316,9 @@ ECPublicKeyParameters RB;
         ToTP.put("SignData",SignData1);
         //向HN发送的内容
         Map<String, Object> ToHN = new HashMap<String, Object>(4);
-        ps=con.prepareStatement("UPDATE HN set TimeSTAMPUE="+this.timeStamp+" where id=1;");
+        ps=con.prepareStatement("UPDATE HN set TimeSTAMPUE="+timestamp+" where id=1;");
         ps.execute();
-        ps=con.prepareStatement("UPDATE HN set AID_2=\""+Base64.getEncoder().encodeToString(this.AID_2)+"\" where id=1;");
+        ps=con.prepareStatement("UPDATE HN set AID_2=\""+Base64.getEncoder().encodeToString(AID_2)+"\" where id=1;");
         ps.execute();
         String BString = Base64.getEncoder().encodeToString(bPublic.getQ().getEncoded(false));
         ps=con.prepareStatement("UPDATE HN set B=\""+BString+"\" where id=1;");
@@ -396,15 +363,24 @@ ECPublicKeyParameters RB;
         this.t=d.getD().add(x.multiply(r.getD()));
     }
     //计算出x2头上一划
-    private BigInteger reduce(BigInteger var1) {
-        return var1.and(BigInteger.valueOf(1L).shiftLeft(this.w).subtract(BigInteger.valueOf(1L))).setBit(this.w);
+    public static BigInteger reduce(BigInteger var1,int w) {
+        return var1.and(BigInteger.valueOf(1L).shiftLeft(w).subtract(BigInteger.valueOf(1L))).setBit(w);
     }
     //BPubTemp可以理解为RB,同理RATEMP也可以理解为RA,特注这里的A是SN的临时公私钥,这里的B是UE发过去的,是UE的临时公私钥对
-    public ArrayList<byte[]> calculateForUEFirstStep() throws Exception {
+    public static ArrayList<byte[]> calculateForUEFirstStep() throws Exception {
         //var3用于记载公钥中的信息,var3和var3_1事实上是一样的，var3是UE的公钥信息，var3_1是SN的公钥信息，此处为了方便显示
         //获取CERT1,CERT2
+        SM2 sm2 = new SM2();
         Connection con= DriverManager.getConnection("jdbc:mysql://localhost:3306/test","root","123456");
-        Map<String, Object> sqlValue = this.autoSqlValue();
+        Map<String, Object> sqlValue = autoSqlValue();
+        //拿到自己的UE,PSN,PHN
+        ECPublicKeyParameters PTP=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("TPPub")));
+        ECPublicKeyParameters PHN=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("HNPub")));
+        ECPublicKeyParameters PSN=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("SNPub")));
+        ECPublicKeyParameters PUE=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("UEPub")));
+
+        ECPrivateKeyParameters UEPriv=sm2.RestorePriv(new BigInteger((String) sqlValue.get("UEPRIV")));
+
         byte[] cert1 =Base64.getDecoder().decode((String)sqlValue.get("CERT1SIGN"));
         byte[] cert2 = Base64.getDecoder().decode((String)sqlValue.get("CERT2SIGN"));
         PreparedStatement ps = con.prepareStatement("select SNName From SN where id=1");
@@ -415,20 +391,20 @@ ECPublicKeyParameters RB;
         }
 
         byte[] SNname = SSNname.getBytes();
-        this.setCert1(cert1);
-        this.setCert2(cert2);
-        byte[] AID;
+        //this.setCert1(cert1);
+        //this.setCert2(cert2);
+        byte[] AID,AID_1 = new byte[0],AID_2 = new byte[0];
         ps=con.prepareStatement("select AID_1 from tp where id=1");
         rs=ps.executeQuery();
         while(rs.next()){
-            this.AID_1=Base64.getDecoder().decode(rs.getString("AID_1"));
+            AID_1=Base64.getDecoder().decode(rs.getString("AID_1"));
         }
         ps=con.prepareStatement("select AID_2 from hn where id=1");
         rs=ps.executeQuery();
         while(rs.next()){
-            this.AID_2=Base64.getDecoder().decode(rs.getString("AID_2"));
+            AID_2=Base64.getDecoder().decode(rs.getString("AID_2"));
         }
-        AID= SM2.byteMerger(this.AID_1,this.AID_2);
+        AID= SM2.byteMerger(AID_1,AID_2);
 
         //byte[] Zue=this.getZ(this.digest, AID, var3.getStaticPublicKey().getQ());
         //byte[] Zsn=this.getZ(this.digest,AID,var3_1.getStaticPublicKey().getQ());
@@ -436,17 +412,17 @@ ECPublicKeyParameters RB;
         byte[] ENTLue=intToTwoBytes(AID.length);
         byte[] ENTLsn=intToTwoBytes(SNname.length);
         //a
-        SM2 sm2= new SM2();
+
         byte[] a=sm2.getcurve().getA().getEncoded();
         byte[] b=sm2.getcurve().getB().getEncoded();
         byte[] gx=sm2.domainParams.getG().getAffineXCoord().getEncoded();
         byte[] gy=sm2.domainParams.getG().getAffineYCoord().getEncoded();
-        ECPublicKeyParameters ueKey = (ECPublicKeyParameters) this.getUE().getPublic();
-        ECPublicKeyParameters ueSn=this.PSN;
-        byte[] xue=ueKey.getQ().getAffineXCoord().getEncoded();
-        byte[] yue=ueKey.getQ().getAffineYCoord().getEncoded();
-        byte[] xsn=ueSn.getQ().getAffineXCoord().getEncoded();
-        byte[] ysn=ueSn.getQ().getAffineYCoord().getEncoded();
+        //ECPublicKeyParameters ueKey = PUE;
+        //ECPublicKeyParameters ueSn=PSN;
+        byte[] xue=PUE.getQ().getAffineXCoord().getEncoded();
+        byte[] yue=PUE.getQ().getAffineYCoord().getEncoded();
+        byte[] xsn=PSN.getQ().getAffineXCoord().getEncoded();
+        byte[] ysn=PSN.getQ().getAffineYCoord().getEncoded();
         byte[] Zue=SM3.sm3Hash(SM2.byteMerger(ENTLue,AID,a,b,gx,gy,xue,yue));
         byte[] Zsn=SM3.sm3Hash(SM2.byteMerger(ENTLsn,SNname,a,b,gx,gy,xsn,ysn));
 
@@ -515,9 +491,16 @@ ECPublicKeyParameters RB;
         //将CERT,U1SIGN,U2SIGN和RA都发给
         return result;
     }
-    public BigInteger UEsecondStep() throws Exception {
+    public static BigInteger UEsecondStep() throws Exception {
         SM2 sm2 = new SM2();
-        Map<String, Object> stringObjectMap = this.autoSqlValue();
+        Map<String, Object> stringObjectMap = org.example.UE.autoSqlValue();
+        //获取PSN，PUN,PHN,PUE
+        ECPublicKeyParameters PUE=sm2.RestorePub(Base64.getDecoder().decode( (String)stringObjectMap.get("UEPub")));
+        ECPublicKeyParameters PSN=sm2.RestorePub(Base64.getDecoder().decode( (String)stringObjectMap.get("SNPub")));
+        ECPublicKeyParameters PHN=sm2.RestorePub(Base64.getDecoder().decode( (String)stringObjectMap.get("HNPub")));
+
+        ECPrivateKeyParameters UEPRIV=sm2.RestorePriv(new BigInteger((String)stringObjectMap.get("UEPRIV")));
+
         byte[] ra = Base64.getDecoder().decode((String) stringObjectMap.get("RA"));
         byte[] rb = Base64.getDecoder().decode((String) stringObjectMap.get("RB"));
         byte[] Ab = Base64.getDecoder().decode((String) stringObjectMap.get("A"));
@@ -541,15 +524,18 @@ ECPublicKeyParameters RB;
             String common = rs.getString("COMMON");
             SIGNSN = Base64.getDecoder().decode(common);
         }
-        if(SM2sign.verify(this.PSN,null,verifyByte,SIGNSN)==false){
+        if(SM2sign.verify(PSN,null,verifyByte,SIGNSN)==false){
             System.out.println("SN验证失败");
             return BigInteger.valueOf(0);
         }else{
             System.out.println("SN验证成功");
-            CalculatewAndH();
+            sm2.getcurve();
+            ECDomainParameters ecParams= sm2.domainParams;
+            int w = ecParams.getCurve().getFieldSize() / 2 - 1;
+            BigInteger H=ecParams.getH();
             //计算x1_,x2_
-            BigInteger x1_=this.reduce(RA.getQ().getAffineXCoord().toBigInteger());
-            BigInteger x2_=this.reduce(RB.getQ().getAffineXCoord().toBigInteger());
+            BigInteger x1_= org.example.UE.reduce(RA.getQ().getAffineXCoord().toBigInteger(),w);
+            BigInteger x2_= org.example.UE.reduce(RB.getQ().getAffineXCoord().toBigInteger(),w);
             //ECPrivateKeyParameters RAPriv= (ECPrivateKeyParameters) this.RA.getPrivate();
             //ECPrivateKeyParameters aPrivate = (ECPrivateKeyParameters)this.UE.getPrivate();
             BigInteger tA=aPrivateKey.getD().add(x1_.multiply(RaPrivateKey.getD()));
@@ -558,7 +544,7 @@ ECPublicKeyParameters RB;
             BigInteger var8=sm2.domainParams.getH().multiply(tA).mod(sm2.domainParams.getN());
             //
             BigInteger var9=var8.multiply(x2_).mod(sm2.domainParams.getN());
-            ECPoint U=ECAlgorithms.sumOfTwoMultiplies(this.PSN.getQ(),var8,RBPoint,var9).normalize();
+            ECPoint U=ECAlgorithms.sumOfTwoMultiplies(PSN.getQ(),var8,RBPoint,var9).normalize();
             return SN.KDF(U,ZUE,ZSN);
         }
     }

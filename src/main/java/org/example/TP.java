@@ -2,6 +2,7 @@ package org.example;
 
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
 import org.bouncycastle.crypto.CipherParameters;
+import org.bouncycastle.crypto.params.ECPrivateKeyParameters;
 import org.bouncycastle.crypto.params.ECPublicKeyParameters;
 import org.bouncycastle.math.ec.ECPoint;
 
@@ -124,8 +125,13 @@ public class TP {
         SignData = signData;
     }
 
-    public boolean VerifySign_1() throws Exception {
-        Map<String, Object> TPParam = this.autoSqlValue();
+    public static boolean VerifySign_1() throws Exception {
+        SM2 sm2=new SM2();
+        //获取PUE,TP密钥，
+
+        Map<String, Object> TPParam = autoSqlValue();
+        ECPublicKeyParameters PUE = sm2.RestorePub(Base64.getDecoder().decode((String) TPParam.get("UEPub")));
+        ECPrivateKeyParameters TPPrivate=sm2.RestorePriv(new BigInteger ((String)TPParam.get("TPPriv")));
         byte[] SIGN= Base64.getDecoder().decode((String) TPParam.get("SIGNDATA"));
         byte[] AID_1= Base64.getDecoder().decode((String) TPParam.get("AID_1"));
         ECPublicKeyParameters A = sm2.RestorePub(Base64.getDecoder().decode((String) TPParam.get("A")));
@@ -142,13 +148,13 @@ public class TP {
         }
         else{
             //检查签名,并且生成证书
-            if(SM2sign.verify(this.PUE,null,SignData1,SIGN)){
+            if(SM2sign.verify(PUE,null,SignData1,SIGN)){
 //             这里设定t1为3分钟，即3*60*1000
                 long t1=3*60*1000;
                 byte[] t1byte = SM2.longToBytes(t1);
                 byte[] CertData=SM2.byteMerger(AID_1,ApubByte,t1byte);
                 //生成证书里面的签名
-                byte[] sign = SM2sign.sign(this.TP.getPrivate(), null, CertData);
+                byte[] sign = SM2sign.sign(TPPrivate, null, CertData);
                 Connection con = DriverManager.getConnection("jdbc:mysql://localhost:3306/test", "root", "123456");
                 PreparedStatement ps = con.prepareStatement("UPDATE UE set CERT1SIGN=\""+Base64.getEncoder().encodeToString(sign)+"\" where id=1;");
                 ps.execute();
@@ -166,7 +172,7 @@ public class TP {
                 return true;
 
             }else {
-                return SM2sign.verify(this.PUE, null, SignData1, SIGN);
+                return SM2sign.verify(PUE, null, SignData1, SIGN);
             }
         }
 

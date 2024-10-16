@@ -146,15 +146,17 @@ public class SN {
         this.t=d.getD().add(x.multiply(r.getD()));
     }
     //计算出x2头上一划
-    private BigInteger reduce(BigInteger var1) {
-        return var1.and(BigInteger.valueOf(1L).shiftLeft(this.w).subtract(BigInteger.valueOf(1L))).setBit(this.w);
+    public static BigInteger reduce(BigInteger var1,int w) {
+        return var1.and(BigInteger.valueOf(1L).shiftLeft(w).subtract(BigInteger.valueOf(1L))).setBit(w);
     }
     //BPubTemp可以理解为RB,同理RATEMP也可以理解为RA,特注这里的A是SN的临时公私钥,这里的B是UE发过去的,是UE的临时公私钥对
     //this.calculateUForSN(RA, this.PHN, this.SN, this.RB);
-    private ECPoint calculateUForSN(ECPublicKeyParameters UEPubTemp, ECPublicKeyParameters UEPub, AsymmetricCipherKeyPair SN, AsymmetricCipherKeyPair SNTemp) throws Exception {
+    private static ECPoint calculateUForSN(ECPublicKeyParameters UEPubTemp, ECPublicKeyParameters UEPub, AsymmetricCipherKeyPair SN, AsymmetricCipherKeyPair SNTemp) throws Exception {
         SM2 sm2 = new SM2();
         sm2.getcurve();
-        CalculatewAndH();
+        ECDomainParameters ecParams= sm2.domainParams;
+        int w = ecParams.getCurve().getFieldSize() / 2 - 1;
+        BigInteger H=ecParams.getH();
         //aPrivate的x点就是x1
         ECPrivateKeyParameters SNPrivate = (ECPrivateKeyParameters) (SN.getPrivate());
         ECPrivateKeyParameters tempSNPrivate = (ECPrivateKeyParameters) (SNTemp.getPrivate());
@@ -164,8 +166,8 @@ public class SN {
         //检查这两个是不是在一个电商，顺便说明一下，这一步还有个隐藏效果是把压缩的点变成了没压缩的
         ECPoint UEPubQ = ECAlgorithms.cleanPoint(var2.getCurve(), UEPub.getQ());
         ECPoint UEPubTempQ = ECAlgorithms.cleanPoint(var2.getCurve(), UEPubTemp.getQ());
-        BigInteger x2_ = this.reduce(SNTempPublic.getQ().getAffineXCoord().toBigInteger());
-        BigInteger x1_ = this.reduce(UEPubTemp.getQ().getAffineXCoord().toBigInteger());
+        BigInteger x2_ = reduce(SNTempPublic.getQ().getAffineXCoord().toBigInteger(),w);
+        BigInteger x1_ = reduce(UEPubTemp.getQ().getAffineXCoord().toBigInteger(),w);
         //算出了tB
         BigInteger tB = SNPrivate.getD().add(x2_.multiply(tempSNPrivate.getD()));
         //算出tb*h
@@ -238,10 +240,14 @@ public class SN {
             return "false";
         }
     }
-    public Boolean VerifyCert1_Cert2() throws SQLException, ClassNotFoundException {
+    public static Boolean VerifyCert1_Cert2() throws SQLException, ClassNotFoundException {
         //检验U1，U2签名
         SM2 sm2=new SM2();
         Map<String, Object> sqlValue = autoSqlValue();
+        //获取PTP和PHN
+        ECPublicKeyParameters PTP=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("TPPub")));
+        ECPublicKeyParameters PHN=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("HNPub")));
+
         byte[] signu1 =Base64.getDecoder().decode ((String)sqlValue.get("SIGNU1"));
         byte[] signu2 = Base64.getDecoder().decode ((String)sqlValue.get("SIGNU2"));
         byte[] signu1Data =null;
@@ -282,7 +288,7 @@ public class SN {
         }
         long t1=Long.valueOf((String)sqlValue.get("t1"));
         byte[] CERT1DATA=SM2.byteMerger(AID_1,Apub.getQ().getEncoded(false),SM2.longToBytes(t1));
-        Boolean CERT1Verify = SM2sign.verify(this.PTP, null, CERT1DATA, CERT1);
+        Boolean CERT1Verify = SM2sign.verify(PTP, null, CERT1DATA, CERT1);
         //获取AID2,B和T2
         String AID2String = (String) sqlValue.get("AID_2");
         byte[] AID_2 = Base64.getDecoder().decode(AID2String);
@@ -296,7 +302,7 @@ public class SN {
         }
         long t2=Long.valueOf((String)sqlValue.get("t2"));
         byte[] CERT2DATA=SM2.byteMerger(AID_2,Bpub.getQ().getEncoded(false),SM2.longToBytes(t2));
-        Boolean CERT2Verify = SM2sign.verify(this.PHN, null, CERT2DATA, CERT2);
+        Boolean CERT2Verify = SM2sign.verify(PHN, null, CERT2DATA, CERT2);
         System.out.println("Cert1验证结果是:"+CERT1Verify.toString());
         System.out.println("Cert2验证结果是:"+CERT2Verify.toString());
         if(CERT2Verify==Boolean.TRUE && CERT2Verify==Boolean.TRUE && VerifyU1==Boolean.TRUE && VerifyU2==Boolean.TRUE){
@@ -309,9 +315,17 @@ public class SN {
         }
     }
 
-    public BigInteger CalculateKSN()throws Exception{
+    public static BigInteger CalculateKSN()throws Exception{
         SM2 sm2=new SM2();
-        Map<String, Object> sqlValue = this.autoSqlValue();
+
+        Map<String, Object> sqlValue = org.example.SN.autoSqlValue();
+        //获取PUE,SNPRIV
+        ECPublicKeyParameters PUE=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("UEPub")));
+        ECPublicKeyParameters PSN=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("SNPub")));
+        ECPublicKeyParameters PHN=sm2.RestorePub(Base64.getDecoder().decode( (String)sqlValue.get("HNPub")));
+
+        ECPrivateKeyParameters SNPRIV=sm2.RestorePriv(new BigInteger((String)sqlValue.get("SNPriv")));
+        AsymmetricCipherKeyPair SN = new AsymmetricCipherKeyPair(PSN, SNPRIV);
         //生成ZUE,ZSN
         //生成ENTLue,ENTLsn，即AID
         byte[] AID_1=Base64.getDecoder().decode((String)sqlValue.get("AID_1"));
@@ -327,20 +341,19 @@ public class SN {
         byte[] b=sm2.getcurve().getB().getEncoded();
         byte[] gx=sm2.domainParams.getG().getAffineXCoord().getEncoded();
         byte[] gy=sm2.domainParams.getG().getAffineYCoord().getEncoded();
-        ECPublicKeyParameters ueKey = this.PUE;
-        ECPublicKeyParameters ueSn=(ECPublicKeyParameters) this.SN.getPublic();
-        byte[] xue=ueKey.getQ().getAffineXCoord().getEncoded();
-        byte[] yue=ueKey.getQ().getAffineYCoord().getEncoded();
-        byte[] xsn=ueSn.getQ().getAffineXCoord().getEncoded();
-        byte[] ysn=ueSn.getQ().getAffineYCoord().getEncoded();
+        ECPublicKeyParameters ueKey = PUE;
+        ECPublicKeyParameters ueSn= PSN;
+        byte[] xue=PUE.getQ().getAffineXCoord().getEncoded();
+        byte[] yue=PUE.getQ().getAffineYCoord().getEncoded();
+        byte[] xsn=PSN.getQ().getAffineXCoord().getEncoded();
+        byte[] ysn=PSN.getQ().getAffineYCoord().getEncoded();
         byte[] Zue=SM3.sm3Hash(SM2.byteMerger(ENTLue,AID,a,b,gx,gy,xue,yue));
         byte[] Zsn=SM3.sm3Hash(SM2.byteMerger(ENTLsn,SNname,a,b,gx,gy,xsn,ysn));
 
         String raBASE64 = (String) sqlValue.get("RA");
         byte[] raByte = Base64.getDecoder().decode(raBASE64);
         ECPublicKeyParameters RA = sm2.RestorePub(raByte);
-        this.setRB(sm2.generateKey());
-        AsymmetricCipherKeyPair rb = this.getRB();
+        AsymmetricCipherKeyPair rb = sm2.generateKey();
         String rbPriv = rb.getPrivate().toString();
         ECPublicKeyParameters rbPub=(ECPublicKeyParameters)(rb.getPublic());
         String rbPubString = Base64.getEncoder().encodeToString(rbPub.getQ().getEncoded(false));
@@ -351,9 +364,9 @@ public class SN {
         ps.execute();
         ps = con.prepareStatement("update SN set RBPriv=\""+rbPriv+"\" where id=1");
         ps.execute();
-        ECPublicKeyParameters RBPub= (ECPublicKeyParameters) this.RB.getPublic();
+        ECPublicKeyParameters RBPub= (ECPublicKeyParameters) rb.getPublic();
         //算出V点
-        ECPoint V = this.calculateUForSN(RA, this.PHN, this.SN, this.RB);
+        ECPoint V = org.example.SN.calculateUForSN(RA, PHN, SN, rb);
         //取出A和B
         String AString = (String)sqlValue.get("A");
         byte[] AByte = Base64.getDecoder().decode(AString);
@@ -364,7 +377,7 @@ public class SN {
         byte[] SignDataSN = SM3.sm3Hash(SM2.byteMerger(Zue, Zsn, RA.getQ().getEncoded(false),
                 RBPub.getQ().getEncoded(false),
                 A.getQ().getEncoded(false), B.getQ().getEncoded(false)));
-        byte[] signSN = SM2sign.sign(this.getSN().getPrivate(), null, SignDataSN);
+        byte[] signSN = SM2sign.sign(SN.getPrivate(), null, SignDataSN);
         ps=con.prepareStatement("INSERT INTO UE(CNAME,COMMON) values (\"SIGNSN\",\""+Base64.getEncoder().encodeToString(signSN)
         +"\")");
         ps.execute();
